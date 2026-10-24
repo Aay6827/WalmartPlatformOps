@@ -1,0 +1,18 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: walmartplatform
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 31000   # checkout API
+        hostPort: 31000
+        protocol: TCP
+      - containerPort: 31001   # Grafana
+        hostPort: 31001
+        protocol: TCP
+      - containerPort: 31002   # Argo CD
+        hostPort: 31002
+        protocol: TCP
+      - containerPort: 31003   # Prometheus
+        hostPort: 31003
+        protocol: TCP
