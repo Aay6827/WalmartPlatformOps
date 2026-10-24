@@ -1,0 +1,12 @@
+# Local dev only. The real deployment is the Helm chart on kind (31000-31003).
+# Host ports 31090/31091 are outside that range so both can run side by side.
+services:
+  inventory:
+    build: ./services/inventory
+    ports: ["31090:8000"]
+  checkout:
+    build: ./services/checkout
+    environment:
+      INVENTORY_URL: http://inventory:8000
+    ports: ["31091:8000"]
+    depends_on: [inventory]
