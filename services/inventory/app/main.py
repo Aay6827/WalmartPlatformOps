@@ -9,15 +9,17 @@ from pydantic import BaseModel, Field
 SERVICE_NAME = os.getenv("SERVICE_NAME", "inventory")
 APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
 LOW_STOCK_THRESHOLD = int(os.getenv("LOW_STOCK_THRESHOLD", "5"))
+# Stock per regular SKU; raised for load tests so the stock does not run out mid-test.
+STOCK_PER_SKU = int(os.getenv("STOCK_PER_SKU", "500"))
 
 SEED = {
-    "WMT-1001": ("Great Value Rice 5kg", 500),
-    "WMT-1002": ("Great Value Whole Milk 1L", 500),
-    "WMT-1003": ("Mainstays Desk Lamp", 500),
-    "WMT-1004": ("Ozark Trail Water Bottle", 500),
-    "WMT-1005": ("Parents Choice Diapers", 500),
-    "WMT-1006": ("Marketside Salad Kit", 500),
-    "WMT-1007": ("Mainstays Bath Towel", 500),
+    "WMT-1001": ("Great Value Rice 5kg", STOCK_PER_SKU),
+    "WMT-1002": ("Great Value Whole Milk 1L", STOCK_PER_SKU),
+    "WMT-1003": ("Mainstays Desk Lamp", STOCK_PER_SKU),
+    "WMT-1004": ("Ozark Trail Water Bottle", STOCK_PER_SKU),
+    "WMT-1005": ("Parents Choice Diapers", STOCK_PER_SKU),
+    "WMT-1006": ("Marketside Salad Kit", STOCK_PER_SKU),
+    "WMT-1007": ("Mainstays Bath Towel", STOCK_PER_SKU),
     "WMT-1008": ("Limited Edition Thermos", 40),
 }
 

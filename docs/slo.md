@@ -15,12 +15,13 @@
 | CheckoutSlowBurn | burn rate > 6 on both the 5m and 30m windows | ticket |
 | CheckoutLatencySLO | more than 5% of requests slower than 500 ms for 1m | ticket |
 | InventoryDependencyDown | a checkout pod's calls to inventory are failing | page |
-| PlatformTargetDown | a pod stopped being scraped | ticket |
+| InventoryAbsent | no healthy inventory pod is scraped for 30s (scaled to zero, crashed): `up == 0` cannot see a pod that vanished, so this uses `absent()` | page |
+| PlatformTargetDown | a pod that still exists stopped answering scrapes | ticket |
 
 All burn-rate alerts also require more than 0.2 requests/s, so a few errors on idle traffic never page.
 
 **Windows are scaled down for the local drill.** Production practice is 5m+1h (page, 14.4x) and 30m+6h (ticket, 6x). The rules are identical; only the ranges differ.
 
-The rules are unit-tested with `promtool test rules` (healthy traffic, total outage, 4xx-only traffic, trickle traffic, dependency down), and the same tests run in CI.
+The rules are unit-tested with `promtool test rules` (healthy traffic, total outage, 4xx-only traffic, trickle traffic, dependency down, inventory disappearing), and the same tests run in CI.
 
 Measured behaviour from a real outage drill: see [slo-drill-results.md](slo-drill-results.md) once `scripts/slo-drill.ps1` has been run.

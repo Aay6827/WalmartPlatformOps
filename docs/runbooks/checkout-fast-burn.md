@@ -12,6 +12,7 @@
    kubectl -n platform describe pod -l app.kubernetes.io/name=inventory
    kubectl -n platform logs deploy/inventory --tail=100
    ```
+   After 3 consecutive failed calls checkout opens a circuit breaker (the *Circuit breaker* tile shows OPEN): it stops calling inventory for 5 s, answers 503 immediately, then lets a single probe call through to test recovery.
    Checkout deliberately returns **503** (not a hang) and stays Ready, so users see fast failures and checkout recovers by itself once inventory is back.
 2. **Did something just change?** `helm -n platform history checkout` and `helm -n platform history inventory`. If a rollout lines up with the start of the burn, roll it back: `helm -n platform rollback <release> <revision> --wait`.
 3. **Is it checkout itself?** Failing with status 500 rather than 503 points at checkout: `kubectl -n platform logs deploy/checkout --tail=100`.

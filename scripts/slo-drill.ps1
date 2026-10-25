@@ -1,12 +1,12 @@
-# SLO drill: steady traffic -> take inventory down -> restore, while recording when each alert reacts.
-# Writes the measured timings to docs/slo-drill-results.md.
+# SLO drill: steady traffic -> take inventory down -> restore, while recording when each alert reacts
+# and how long requests really take in each phase. Writes the measurements to docs/slo-drill-results.md.
 param(
     [string]$BaseUrl = "http://localhost:31000",
     [string]$Prometheus = "http://localhost:31003",
     [string]$Context = "kind-walmartplatform",
-    [int]$HealthySeconds = 60,
-    [int]$OutageSeconds = 120,
-    [int]$RecoverySeconds = 90
+    [int]$HealthySeconds = 240,
+    [int]$OutageSeconds = 150,
+    [int]$RecoverySeconds = 120
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -28,6 +28,8 @@ function Get-AlertStates {
 Write-Host "Resetting inventory (fresh in-memory stock) before the drill..." -ForegroundColor Cyan
 Invoke-Kubectl -n platform rollout restart deploy/inventory
 Invoke-Kubectl -n platform rollout status deploy/inventory --timeout=120s
+Write-Host "Letting Prometheus settle for 20 s..."
+Start-Sleep -Seconds 20
 
 $skus = @("WMT-1001", "WMT-1002", "WMT-1003", "WMT-1004", "WMT-1005", "WMT-1006", "WMT-1007")
 $clock = [System.Diagnostics.Stopwatch]::StartNew()
@@ -38,9 +40,9 @@ $i = 0
 $lastPoll = -10.0
 $seen = @{}
 $prev = @{}
-$codes = @{}
+$lat = @{}
 
-Write-Host "`nPhase 1/3: healthy traffic for $HealthySeconds s (about 10 requests/s)" -ForegroundColor Cyan
+Write-Host "`nPhase 1/3: healthy traffic for $HealthySeconds s" -ForegroundColor Cyan
 while ($true) {
     $t = $clock.Elapsed.TotalSeconds
     if ($phase -eq "healthy" -and $t -ge $HealthySeconds) {
@@ -58,14 +60,17 @@ while ($true) {
     $body = '{"customer_id":"drill","items":[{"sku":"' + $skus[$i % 7] + '","quantity":1}]}'
     $i++
     $code = 0
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        $r = Invoke-WebRequest -Uri "$BaseUrl/checkout" -Method Post -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 10
+        $r = Invoke-WebRequest -Uri "$BaseUrl/checkout" -Method Post -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 15
         $code = [int]$r.StatusCode
     } catch {
         if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
     }
-    $key = "$phase $code"
-    if ($codes.ContainsKey($key)) { $codes[$key]++ } else { $codes[$key] = 1 }
+    $sw.Stop()
+    $key = "$phase|$code"
+    if (-not $lat.ContainsKey($key)) { $lat[$key] = New-Object System.Collections.ArrayList }
+    [void]$lat[$key].Add($sw.Elapsed.TotalSeconds)
 
     if (($t - $lastPoll) -ge 2) {
         $lastPoll = $t
@@ -87,39 +92,63 @@ while ($true) {
     }
     Start-Sleep -Milliseconds 60
 }
+$endAt = $clock.Elapsed.TotalSeconds
 
 function Rel($name, $state, $origin) {
     $k = "$name|$state"
-    if ($seen.ContainsKey($k)) { return ("{0:N0} s" -f ($seen[$k] - $origin)) }
-    return "not reached"
+    if (-not $seen.ContainsKey($k)) { return "not reached" }
+    $d = $seen[$k] - $origin
+    if ($d -lt 0) { return "before the outage (noise from the inventory restart)" }
+    return ("{0:N0} s" -f $d)
 }
 
-$rows = @()
-foreach ($name in @("CheckoutFastBurn", "CheckoutSlowBurn", "InventoryDependencyDown", "PlatformTargetDown")) {
-    $rows += ("| {0} | {1} | {2} | {3} |" -f $name, (Rel $name "pending" $outageAt), (Rel $name "firing" $outageAt), (Rel $name "resolved" $restoreAt))
+$alertRows = @()
+foreach ($name in @("CheckoutFastBurn", "CheckoutSlowBurn", "CheckoutLatencySLO", "InventoryDependencyDown", "InventoryAbsent", "PlatformTargetDown")) {
+    $alertRows += ("| {0} | {1} | {2} | {3} |" -f $name, (Rel $name "pending" $outageAt), (Rel $name "firing" $outageAt), (Rel $name "resolved" $restoreAt))
 }
-$counts = ($codes.Keys | Sort-Object | ForEach-Object { "{0}: {1}" -f $_, $codes[$_] }) -join "; "
+
+$durations = @{ healthy = $outageAt; outage = ($restoreAt - $outageAt); recovery = ($endAt - $restoreAt) }
+$latRows = @()
+foreach ($ph in @("healthy", "outage", "recovery")) {
+    $keys = @($lat.Keys | Where-Object { $_ -like "$ph|*" } | Sort-Object)
+    $phaseTotal = 0
+    foreach ($k in $keys) { $phaseTotal += $lat[$k].Count }
+    foreach ($k in $keys) {
+        $vals = @($lat[$k] | Sort-Object)
+        $n = $vals.Count
+        $med = $vals[[int][math]::Floor(($n - 1) / 2)]
+        $p95 = $vals[[int][math]::Min($n - 1, [math]::Ceiling(0.95 * $n) - 1)]
+        $max = $vals[$n - 1]
+        $status = $k.Split('|')[1]
+        $latRows += ("| {0} | {1:N1} | {2} | {3} | {4:N3} | {5:N3} | {6:N3} |" -f $ph, ($phaseTotal / $durations[$ph]), $status, $n, $med, $p95, $max)
+    }
+}
 
 $md = @(
     "# SLO drill results",
     "",
-    "Measured on the local kind cluster on $(Get-Date -Format 'yyyy-MM-dd HH:mm') (scrape and evaluation interval 5 s).",
+    "Measured on the local kind cluster on $(Get-Date -Format 'yyyy-MM-dd HH:mm') (Prometheus scrape and rule evaluation every 5 s).",
     "",
-    "Scenario: about 10 checkout requests/s for $HealthySeconds s, inventory scaled to 0 for $OutageSeconds s, then restored.",
+    "Scenario: steady checkout traffic for $HealthySeconds s, inventory scaled to 0 for $OutageSeconds s, then restored and watched for $RecoverySeconds s. Alert times are seconds after the outage began (resolved: seconds after inventory was restored).",
     "",
-    "| Alert | Pending after outage began | Firing after outage began | Resolved after restore |",
+    "| Alert | Pending | Firing | Resolved |",
     "|---|---|---|---|"
-) + $rows + @(
+) + $alertRows + @(
     "",
-    "Requests by phase and status: $counts",
+    "Request latency as seen by the client, per phase and HTTP status (seconds):",
     "",
-    "Notes: CheckoutSlowBurn uses a 30-minute window, so it keeps firing long after recovery; that is expected, not a bug.",
-    "The windows are scaled down for the drill (see deploy/monitoring/slo.rules.yml)."
+    "| Phase | Requests/s (all statuses) | HTTP status | Requests | Median | p95 | Max |",
+    "|---|---|---|---|---|---|---|"
+) + $latRows + @(
+    "",
+    "Notes: CheckoutSlowBurn uses a 30-minute window, so it can keep firing long after recovery; that is expected.",
+    "The burn-rate windows are scaled down for the drill (see deploy/monitoring/slo.rules.yml and docs/slo.md)."
 )
 $out = Join-Path $root "docs/slo-drill-results.md"
 [System.IO.File]::WriteAllText($out, ($md -join "`n") + "`n", (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host "`n=== Drill summary ===" -ForegroundColor Cyan
-Write-Host "Requests: $counts"
-$rows | ForEach-Object { Write-Host $_ }
+$alertRows | ForEach-Object { Write-Host $_ }
+Write-Host ""
+$latRows | ForEach-Object { Write-Host $_ }
 Write-Host "`nWritten to docs/slo-drill-results.md" -ForegroundColor Green

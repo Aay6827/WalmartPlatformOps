@@ -1,4 +1,8 @@
+import httpx
 import pytest
+
+from app import main as checkout_main
+from app.inventory_client import CircuitBreaker, InventoryClient
 
 
 def order(items, customer="C-1"):
@@ -84,3 +88,65 @@ def metric(client, line_prefix):
         if line.startswith(line_prefix):
             return float(line.rsplit(" ", 1)[1])
     return 0.0
+
+
+# ---------- circuit breaker ----------
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_breaker_opens_after_consecutive_failures_and_probes_after_reset():
+    clock = FakeClock()
+    b = CircuitBreaker(failure_threshold=3, reset_seconds=5.0, clock=clock)
+    for _ in range(2):
+        assert b.allow()
+        b.record_failure()
+    assert b.allow() and not b.is_open  # two failures: still closed
+    b.record_failure()
+    assert b.is_open and not b.allow()  # third failure opens it
+    clock.now = 4.9
+    assert not b.allow()
+    clock.now = 5.0
+    assert b.allow()  # the single probe
+    assert not b.allow()  # nobody else gets through while the probe is in flight
+    b.record_failure()  # probe failed: open again
+    assert b.is_open and not b.allow()
+    clock.now = 10.0
+    assert b.allow()
+    b.record_success()  # probe succeeded: closed
+    assert not b.is_open and b.allow()
+
+
+def test_success_resets_the_failure_count():
+    b = CircuitBreaker(failure_threshold=3)
+    b.record_failure()
+    b.record_failure()
+    b.record_success()
+    b.record_failure()
+    b.record_failure()
+    assert not b.is_open
+
+
+def test_open_circuit_answers_503_without_touching_the_network(client_inventory_down):
+    attempts = []
+
+    def refuse(request):
+        attempts.append(request)
+        raise httpx.ConnectError("connection refused")
+
+    inventory = InventoryClient("http://inventory", transport=httpx.MockTransport(refuse))
+    checkout_main.app.dependency_overrides[checkout_main.get_inventory] = lambda: inventory
+    codes = [client_inventory_down.post("/checkout", json=order([{"sku": "A", "quantity": 1}])).status_code for _ in range(6)]
+    assert codes == [503] * 6
+    assert len(attempts) == 3  # three real attempts, then the breaker refused the rest
+    assert metric(client_inventory_down, "inventory_circuit_open") == 1.0
+
+
+def test_client_4xx_does_not_open_the_circuit(client):
+    for _ in range(5):
+        assert client.post("/checkout", json=order([{"sku": "NOPE", "quantity": 1}])).status_code == 404
+    assert client.post("/checkout", json=order([{"sku": "A", "quantity": 1}])).status_code == 201

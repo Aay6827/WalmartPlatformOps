@@ -13,12 +13,14 @@ SERVICE_NAME = os.getenv("SERVICE_NAME", "checkout")
 APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
 INVENTORY_URL = os.getenv("INVENTORY_URL", "http://inventory:8000")
 INVENTORY_TIMEOUT = float(os.getenv("INVENTORY_TIMEOUT_SECONDS", "2.0"))
+INVENTORY_CONNECT_TIMEOUT = float(os.getenv("INVENTORY_CONNECT_TIMEOUT_SECONDS", "0.5"))
 
 HTTP_REQUESTS = Counter("http_requests_total", "Total HTTP requests", ["method", "path", "status"])
 HTTP_LATENCY = Histogram("http_request_duration_seconds", "HTTP request latency in seconds", ["method", "path"])
 CHECKOUTS = Counter("checkout_requests_total", "Checkout attempts by result", ["result"])
 INVENTORY_CALL_LATENCY = Histogram("inventory_call_duration_seconds", "Latency of calls to the inventory service")
 INVENTORY_UP = Gauge("inventory_dependency_up", "1 if the last inventory call reached the service, else 0")
+INVENTORY_CIRCUIT_OPEN = Gauge("inventory_circuit_open", "1 while the circuit breaker is refusing calls to inventory")
 
 app = FastAPI(title="Checkout Service", version=APP_VERSION)
 
@@ -30,7 +32,7 @@ _inventory = None
 def get_inventory():
     global _inventory
     if _inventory is None:
-        _inventory = InventoryClient(INVENTORY_URL, timeout=INVENTORY_TIMEOUT)
+        _inventory = InventoryClient(INVENTORY_URL, timeout=INVENTORY_TIMEOUT, connect_timeout=INVENTORY_CONNECT_TIMEOUT)
     return _inventory
 
 
@@ -90,6 +92,9 @@ def _call(fn, *args):
         return result
     finally:
         INVENTORY_CALL_LATENCY.observe(time.perf_counter() - start)
+        breaker = getattr(fn.__self__, "breaker", None)
+        if breaker is not None:
+            INVENTORY_CIRCUIT_OPEN.set(1 if breaker.is_open else 0)
 
 
 def _roll_back(inventory, reserved):

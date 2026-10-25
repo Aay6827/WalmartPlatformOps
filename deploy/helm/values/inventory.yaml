@@ -9,3 +9,7 @@ image:
 service:
   type: ClusterIP
   port: 8000
+
+env:
+  # Plenty of stock so drills and load tests do not run out and start returning 409s.
+  STOCK_PER_SKU: "100000"

@@ -91,6 +91,17 @@ groups:
         annotations:
           summary: "Checkout pod {{ $labels.pod }} cannot reach the inventory service"
 
+      - alert: InventoryAbsent
+        # up == 0 cannot see a pod that no longer exists: when inventory is scaled to zero or crash-looping out of
+        # service discovery, the target simply disappears. absent() catches that case.
+        expr: absent(up{job="platform-pods",app="inventory"} == 1)
+        for: 30s
+        labels:
+          severity: page
+        annotations:
+          summary: "No healthy inventory pod is being scraped (scaled to zero, crashed, or not scheduled)"
+          runbook: "docs/runbooks/checkout-fast-burn.md"
+
       - alert: PlatformTargetDown
         expr: up{job="platform-pods"} == 0
         for: 30s

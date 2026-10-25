@@ -91,3 +91,31 @@ tests:
               pod: c1
             exp_annotations:
               summary: "Checkout pod c1 cannot reach the inventory service"
+
+  # Inventory disappearing (scaled to 0) must page even though no target ever reports up == 0.
+  - interval: 5s
+    input_series:
+      - series: 'up{job="platform-pods",app="inventory",pod="i1"}'
+        values: '1x12 stale'
+    alert_rule_test:
+      - eval_time: 50s
+        alertname: InventoryAbsent
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: InventoryAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "No healthy inventory pod is being scraped (scaled to zero, crashed, or not scheduled)"
+              runbook: "docs/runbooks/checkout-fast-burn.md"
+
+  # A healthy inventory pod that keeps being scraped never triggers InventoryAbsent.
+  - interval: 5s
+    input_series:
+      - series: 'up{job="platform-pods",app="inventory",pod="i1"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: InventoryAbsent
+        exp_alerts: []
