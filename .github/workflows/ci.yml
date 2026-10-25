@@ -85,3 +85,62 @@ jobs:
           docker tag "${IMAGE}:${SHORT_SHA}" "${IMAGE}:latest"
           docker push "${IMAGE}:${SHORT_SHA}"
           docker push "${IMAGE}:latest"
+
+  chart:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+      - name: Helm lint and schema validation
+        run: |
+          helm version --short
+          for svc in inventory checkout; do
+            helm lint deploy/helm/service -f deploy/helm/values/$svc.yaml
+            helm template $svc deploy/helm/service -f deploy/helm/values/$svc.yaml --namespace platform \
+              | ./kubeconform -strict -summary -kubernetes-version 1.31.0
+            helm template $svc deploy/helm/service -f deploy/helm/values/$svc.yaml --namespace platform \
+              --set autoscaling.enabled=true \
+              | ./kubeconform -strict -summary -kubernetes-version 1.31.0
+          done
+
+  deploy-test:
+    needs: image
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ensure kind is installed
+        run: |
+          if ! command -v kind >/dev/null; then
+            curl -sSLo kind https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+            sudo install kind /usr/local/bin/kind
+          fi
+          kind version
+          helm version --short
+          kubectl version --client
+
+      - name: Create kind cluster
+        run: kind create cluster --config deploy/kind/kind-config.yaml --wait 120s
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Deploy the images built for this commit
+        run: |
+          pwsh -NoProfile -File scripts/deploy-kind.ps1 -Tag "${GITHUB_SHA::7}" -LoadImages
+
+      - name: Smoke test, including the inventory outage drill
+        run: pwsh -NoProfile -File scripts/smoke-test.ps1 -Chaos
+
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl -n platform describe pods || true
+          kubectl -n platform logs -l app.kubernetes.io/part-of=walmart-platform-ops --all-containers --tail=80 || true

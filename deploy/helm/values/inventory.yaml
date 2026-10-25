@@ -1,0 +1,11 @@
+# Inventory keeps stock in memory, so it runs as a single replica by design
+# (two replicas would each hold a different copy of the stock).
+replicaCount: 1
+
+image:
+  repository: ghcr.io/aay6827/walmartplatformops-inventory
+  tag: "8326222"
+
+service:
+  type: ClusterIP
+  port: 8000
