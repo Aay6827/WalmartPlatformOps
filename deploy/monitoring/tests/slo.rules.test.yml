@@ -1,0 +1,93 @@
+rule_files:
+  - ../slo.rules.yml
+
+evaluation_interval: 5s
+
+tests:
+  # Healthy: 10 req/s, no 5xx -> nothing fires.
+  - interval: 5s
+    input_series:
+      - series: 'http_requests_total{app="checkout",pod="c1",path="/checkout",status="201",method="POST"}'
+        values: '0+50x120'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CheckoutFastBurn
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: CheckoutSlowBurn
+        exp_alerts: []
+    promql_expr_test:
+      - expr: slo:checkout_error_ratio:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="slo:checkout_error_ratio:rate5m"}'
+            value: 0
+
+  # Total outage after 2 minutes: every request becomes a 503 -> fast and slow burn both fire.
+  - interval: 5s
+    input_series:
+      - series: 'http_requests_total{app="checkout",pod="c1",path="/checkout",status="201",method="POST"}'
+        values: '0+50x24 1200+0x96'
+      - series: 'http_requests_total{app="checkout",pod="c1",path="/checkout",status="503",method="POST"}'
+        values: '0+0x24 0+50x96'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CheckoutFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              slo: checkout-availability
+            exp_annotations:
+              summary: "Checkout is burning its error budget 200x too fast"
+              runbook: "docs/runbooks/checkout-fast-burn.md"
+      - eval_time: 9m
+        alertname: CheckoutSlowBurn
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              slo: checkout-availability
+            exp_annotations:
+              summary: "Checkout has a sustained elevated error rate (200x budget burn)"
+              runbook: "docs/runbooks/checkout-slow-burn.md"
+
+  # 4xx must NOT burn the budget: 100% 409s, no 5xx -> no alert.
+  - interval: 5s
+    input_series:
+      - series: 'http_requests_total{app="checkout",pod="c1",path="/checkout",status="409",method="POST"}'
+        values: '0+50x120'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: CheckoutFastBurn
+        exp_alerts: []
+
+  # A handful of errors on trickle traffic must not page (traffic guard).
+  - interval: 5s
+    input_series:
+      - series: 'http_requests_total{app="checkout",pod="c1",path="/checkout",status="201",method="POST"}'
+        values: '0+0.05x120'
+      - series: 'http_requests_total{app="checkout",pod="c1",path="/checkout",status="503",method="POST"}'
+        values: '0+0.05x120'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: CheckoutFastBurn
+        exp_alerts: []
+
+  # Dependency alert only fires once calls are being made.
+  - interval: 5s
+    input_series:
+      - series: 'inventory_dependency_up{app="checkout",pod="c1"}'
+        values: '0x60'
+      - series: 'inventory_call_duration_seconds_count{app="checkout",pod="c1"}'
+        values: '0+0x30 0+5x30'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: InventoryDependencyDown
+        exp_alerts: []
+      - eval_time: 4m30s
+        alertname: InventoryDependencyDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              pod: c1
+            exp_annotations:
+              summary: "Checkout pod c1 cannot reach the inventory service"

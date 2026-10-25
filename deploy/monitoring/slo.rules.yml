@@ -1,0 +1,100 @@
+# SLOs for the checkout API
+#   Availability: 99.5% of POST /checkout requests do not return 5xx   (error budget = 0.5%)
+#   Latency:      95% of POST /checkout requests complete within 500 ms
+# 4xx responses (unknown SKU, insufficient stock) are the client's problem and do not spend the budget.
+#
+# Burn rate = observed error ratio / error budget. A burn rate of 1 spends the budget exactly over the SLO window.
+# Windows are scaled down for the local drill (fast: 1m+5m, slow: 5m+30m). Production-style windows would be
+# 5m+1h (page, burn 14.4) and 30m+6h (ticket, burn 6): same rules, longer ranges.
+groups:
+  - name: checkout-slo-recording
+    interval: 5s
+    rules:
+      - record: slo:checkout_requests:rate5m
+        expr: sum(rate(http_requests_total{app="checkout",path="/checkout"}[5m]))
+
+      - record: slo:checkout_error_ratio:rate1m
+        expr: |
+          (sum(rate(http_requests_total{app="checkout",path="/checkout",status=~"5.."}[1m])) or vector(0))
+          / sum(rate(http_requests_total{app="checkout",path="/checkout"}[1m]))
+      - record: slo:checkout_error_ratio:rate5m
+        expr: |
+          (sum(rate(http_requests_total{app="checkout",path="/checkout",status=~"5.."}[5m])) or vector(0))
+          / sum(rate(http_requests_total{app="checkout",path="/checkout"}[5m]))
+      - record: slo:checkout_error_ratio:rate30m
+        expr: |
+          (sum(rate(http_requests_total{app="checkout",path="/checkout",status=~"5.."}[30m])) or vector(0))
+          / sum(rate(http_requests_total{app="checkout",path="/checkout"}[30m]))
+
+      - record: slo:checkout_burn_rate:rate1m
+        expr: slo:checkout_error_ratio:rate1m / 0.005
+      - record: slo:checkout_burn_rate:rate5m
+        expr: slo:checkout_error_ratio:rate5m / 0.005
+      - record: slo:checkout_burn_rate:rate30m
+        expr: slo:checkout_error_ratio:rate30m / 0.005
+
+      - record: slo:checkout_slow_ratio:rate5m
+        expr: |
+          1 - (
+            sum(rate(http_request_duration_seconds_bucket{app="checkout",path="/checkout",le="0.5"}[5m]))
+            / sum(rate(http_request_duration_seconds_count{app="checkout",path="/checkout"}[5m]))
+          )
+
+  - name: checkout-slo-alerts
+    interval: 5s
+    rules:
+      - alert: CheckoutFastBurn
+        # 14.4x burn on both a short and a very short window: the budget is going fast and it is happening now.
+        expr: |
+          slo:checkout_burn_rate:rate1m > 14.4
+          and slo:checkout_burn_rate:rate5m > 14.4
+          and slo:checkout_requests:rate5m > 0.2
+        for: 15s
+        labels:
+          severity: page
+          slo: checkout-availability
+        annotations:
+          summary: "Checkout is burning its error budget {{ $value | humanize }}x too fast"
+          runbook: "docs/runbooks/checkout-fast-burn.md"
+
+      - alert: CheckoutSlowBurn
+        # 6x burn sustained over a longer window: not an emergency, but the month is at risk.
+        expr: |
+          slo:checkout_burn_rate:rate5m > 6
+          and slo:checkout_burn_rate:rate30m > 6
+          and slo:checkout_requests:rate5m > 0.2
+        for: 30s
+        labels:
+          severity: ticket
+          slo: checkout-availability
+        annotations:
+          summary: "Checkout has a sustained elevated error rate ({{ $value | humanize }}x budget burn)"
+          runbook: "docs/runbooks/checkout-slow-burn.md"
+
+      - alert: CheckoutLatencySLO
+        expr: slo:checkout_slow_ratio:rate5m > 0.05 and slo:checkout_requests:rate5m > 0.2
+        for: 1m
+        labels:
+          severity: ticket
+          slo: checkout-latency
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of checkout requests are slower than 500 ms (SLO allows 5%)"
+
+      - alert: InventoryDependencyDown
+        # inventory_dependency_up starts at 0 before the first call, so only alert once calls are actually being made.
+        expr: |
+          min by (pod) (inventory_dependency_up{app="checkout"}) == 0
+          and on (pod) rate(inventory_call_duration_seconds_count{app="checkout"}[1m]) > 0
+        for: 15s
+        labels:
+          severity: page
+        annotations:
+          summary: "Checkout pod {{ $labels.pod }} cannot reach the inventory service"
+
+      - alert: PlatformTargetDown
+        expr: up{job="platform-pods"} == 0
+        for: 30s
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Metrics scrape failing for {{ $labels.app }} pod {{ $labels.pod }}"

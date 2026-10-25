@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespaces are set explicitly in each manifest (the Role must live in "platform", everything else in "monitoring").
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - prometheus.yaml
+  - grafana.yaml
+
+# Config comes from real files so it can be linted and unit-tested. The generated name suffix changes whenever
+# the content changes, which rolls the pods automatically.
+configMapGenerator:
+  - name: prometheus-config
+    namespace: monitoring
+    files:
+      - prometheus.yml
+  - name: prometheus-rules
+    namespace: monitoring
+    files:
+      - slo.rules.yml
+  - name: grafana-datasources
+    namespace: monitoring
+    files:
+      - datasource.yml=grafana-datasource.yml
+  - name: grafana-dashboard-provider
+    namespace: monitoring
+    files:
+      - provider.yml=grafana-dashboard-provider.yml
+  - name: grafana-dashboards
+    namespace: monitoring
+    files:
+      - checkout-slo.json

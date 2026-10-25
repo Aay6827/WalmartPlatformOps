@@ -144,3 +144,16 @@ jobs:
           kubectl get pods -A -o wide || true
           kubectl -n platform describe pods || true
           kubectl -n platform logs -l app.kubernetes.io/part-of=walmart-platform-ops --all-containers --tail=80 || true
+
+  monitoring:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: promtool check and unit-test the SLO rules (same Prometheus version as the cluster)
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/w:ro" prom/prometheus:v3.5.0 check rules /w/slo.rules.yml
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/w:ro" -w /w/tests prom/prometheus:v3.5.0 test rules slo.rules.test.yml
+      - name: Validate the monitoring manifests
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          kubectl kustomize deploy/monitoring | ./kubeconform -strict -summary -kubernetes-version 1.31.0
