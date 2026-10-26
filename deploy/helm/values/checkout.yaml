@@ -12,3 +12,20 @@ service:
 env:
   INVENTORY_URL: http://inventory:8000
   INVENTORY_TIMEOUT_SECONDS: "2.0"
+
+# CPU request and autoscaling. replicaCount above still decides whether a PodDisruptionBudget is rendered;
+# once the HPA is enabled it owns the Deployment's replica count.
+resources:
+  requests:
+    cpu: 100m
+    memory: 96Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  scaleDownStabilizationSeconds: 60   # chart default is 300; shortened so a local load test shows scale-down in minutes

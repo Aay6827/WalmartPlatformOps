@@ -138,6 +138,16 @@ jobs:
       - name: Smoke test, including the inventory outage drill
         run: pwsh -NoProfile -File scripts/smoke-test.ps1 -Chaos
 
+      - name: Install metrics-server (the HPA needs CPU numbers)
+        run: pwsh -NoProfile -File scripts/install-metrics-server.ps1
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Short load test against the deployed checkout (thresholds are the SLOs)
+        run: |
+          k6 run --quiet -e BASE_URL=http://localhost:31000 -e BASE_RPS=5 -e PEAK_RPS=30 -e WARM=5s -e RAMP=10s -e HOLD=20s -e COOL=5s load-tests/checkout.js
+          kubectl -n platform get hpa
+
       - name: Dump cluster state on failure
         if: failure()
         run: |
@@ -157,3 +167,12 @@ jobs:
         run: |
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
           kubectl kustomize deploy/monitoring | ./kubeconform -strict -summary -kubernetes-version 1.31.0
+          kubectl kustomize deploy/metrics-server | ./kubeconform -strict -summary -kubernetes-version 1.31.0
+
+  load-test-script:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: grafana/setup-k6-action@v1
+      - name: k6 inspect (the script parses and its options are valid)
+        run: k6 inspect load-tests/checkout.js

@@ -31,3 +31,4 @@ configMapGenerator:
     namespace: monitoring
     files:
       - checkout-slo.json
+      - checkout-scaling.json
