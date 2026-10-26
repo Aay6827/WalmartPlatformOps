@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: checkout
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Aay6827/WalmartPlatformOps.git
+    targetRevision: main
+    path: deploy/helm/service
+    helm:
+      releaseName: checkout
+      valueFiles:
+        - ../values/checkout.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  syncPolicy:
+    automated:
+      prune: true       # delete what was removed from git
+      selfHeal: true    # undo changes made by hand with kubectl
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m

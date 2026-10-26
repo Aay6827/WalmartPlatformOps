@@ -168,6 +168,8 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
           kubectl kustomize deploy/monitoring | ./kubeconform -strict -summary -kubernetes-version 1.31.0
           kubectl kustomize deploy/metrics-server | ./kubeconform -strict -summary -kubernetes-version 1.31.0
+          kubectl kustomize deploy/argocd | ./kubeconform -strict -summary -kubernetes-version 1.31.0 -skip CustomResourceDefinition
+          ./kubeconform -strict -summary -schema-location default -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' deploy/argocd/root-app.yaml deploy/argocd/apps
 
   load-test-script:
     runs-on: ubuntu-24.04
@@ -176,3 +178,29 @@ jobs:
       - uses: grafana/setup-k6-action@v1
       - name: k6 inspect (the script parses and its options are valid)
         run: k6 inspect load-tests/checkout.js
+
+  promote:
+    # GitOps hand-off: only images that passed the kind deploy test are written into the values files; Argo CD does the rest.
+    needs: deploy-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Point the Helm values at the images built for this commit
+        run: |
+          TAG="${GITHUB_SHA::7}"
+          for svc in inventory checkout; do
+            sed -i -E "s/^(  tag: )\"?[^\" #]+\"?/\1\"${TAG}\"/" "deploy/helm/values/${svc}.yaml"
+          done
+          git diff --stat
+          if git diff --quiet; then
+            echo "Values already point at ${TAG}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(deploy): promote images to ${TAG} [skip ci]"
+          git pull --rebase origin main
+          git push origin HEAD:main

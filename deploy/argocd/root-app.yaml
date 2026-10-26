@@ -1,0 +1,22 @@
+# App of apps: the one object that is applied by hand. It watches deploy/argocd/apps in git, and every Application
+# file in that folder becomes a deployed application. Adding a service = adding a file and pushing.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Aay6827/WalmartPlatformOps.git
+    targetRevision: main
+    path: deploy/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

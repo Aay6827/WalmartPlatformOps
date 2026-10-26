@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Argo CD v3.4.5, installed from the upstream manifest pinned to that tag (about 1.9 MB, so not copied into this repo)
+# plus the few local-cluster changes below. Apply with scripts/install-argocd.ps1 (it needs --server-side: the CRDs
+# are too large for a client-side apply).
+namespace: argocd
+
+resources:
+  - namespace.yaml
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.5/manifests/install.yaml
+
+patches:
+  # Track resources with an annotation instead of the app.kubernetes.io/instance label. The Helm chart already uses
+  # that label for its own selectors, and Argo's default would overwrite it.
+  # Check git every 30 s (default 3 min) so the local demo reacts quickly.
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: argocd-cm
+      data:
+        application.resourceTrackingMethod: annotation
+        timeout.reconciliation: 30s
+  # Serve plain HTTP so http://localhost:31002 works without a certificate warning (local cluster only).
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: argocd-cmd-params-cm
+      data:
+        server.insecure: "true"
+  - target:
+      kind: Service
+      name: argocd-server
+    patch: |-
+      - op: add
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 31002
+  # Not used here (no SSO, no notifications): keep the laptop's memory for the workloads.
+  - target:
+      kind: Deployment
+      name: argocd-dex-server
+    patch: |-
+      - op: add
+        path: /spec/replicas
+        value: 0
+  - target:
+      kind: Deployment
+      name: argocd-notifications-controller
+    patch: |-
+      - op: add
+        path: /spec/replicas
+        value: 0

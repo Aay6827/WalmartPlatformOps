@@ -6,7 +6,8 @@ param(
     [string]$Tag = "",
     [string]$Context = "kind-walmartplatform",
     [string]$ClusterName = "walmartplatform",
-    [switch]$LoadImages
+    [switch]$LoadImages,
+    [switch]$Force
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -37,6 +38,16 @@ function Test-GhcrPublic {
     } catch {
         return $false
     }
+}
+
+# Once Argo CD owns the services, a manual helm upgrade is undone by self-heal within seconds. CI has no Argo CD, so it is unaffected.
+if (-not $Force) {
+    $ErrorActionPreference = "Continue"
+    & kubectl --context $Context -n argocd get application checkout -o name 2>&1 | Out-Null
+    $argoOwnsIt = ($LASTEXITCODE -eq 0)
+    $global:LASTEXITCODE = 0
+    $ErrorActionPreference = "Stop"
+    if ($argoOwnsIt) { throw "Argo CD owns these services on this cluster. Deploy with a git push instead (or pass -Force to override)." }
 }
 
 foreach ($svc in @('inventory', 'checkout')) {
