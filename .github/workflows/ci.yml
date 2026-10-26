@@ -131,6 +131,11 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+      - name: Enforce the restricted Pod Security profile on the platform namespace (a non-compliant pod fails the deploy)
+        run: |
+          kubectl create namespace platform
+          kubectl label namespace platform pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
+
       - name: Deploy the images built for this commit
         run: |
           pwsh -NoProfile -File scripts/deploy-kind.ps1 -Tag "${GITHUB_SHA::7}" -LoadImages
@@ -204,3 +209,32 @@ jobs:
           git commit -am "chore(deploy): promote images to ${TAG} [skip ci]"
           git pull --rebase origin main
           git push origin HEAD:main
+
+  config-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Render the manifests this repo owns
+        run: |
+          mkdir -p scan
+          for svc in inventory checkout; do
+            helm template $svc deploy/helm/service -f deploy/helm/values/$svc.yaml --namespace platform > scan/$svc.yaml
+          done
+          kubectl kustomize deploy/monitoring > scan/monitoring.yaml
+          kubectl kustomize deploy/metrics-server > scan/metrics-server.yaml
+          cp -r services scan/services
+      - name: Trivy misconfiguration scan (HIGH and CRITICAL fail the build)
+        run: |
+          curl -sSL https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz | tar xz trivy
+          ./trivy config --severity HIGH,CRITICAL --exit-code 1 scan
+
+  secret-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: gitleaks over the whole git history
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks git --redact --verbose --exit-code 1 .

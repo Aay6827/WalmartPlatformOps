@@ -72,9 +72,12 @@ spec:
               memory: 384Mi
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
             - name: data
               mountPath: /var/lib/grafana
             - name: datasources
@@ -84,6 +87,8 @@ spec:
             - name: dashboards
               mountPath: /var/lib/grafana/dashboards
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: data
           emptyDir: {}
         - name: datasources

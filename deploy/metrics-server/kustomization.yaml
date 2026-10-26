@@ -16,3 +16,16 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/args/-
         value: --kubelet-insecure-tls
+  # The container already runs as uid 1000 with a read-only root filesystem; also say so at pod level (and add seccomp)
+  # so the upstream manifest passes the Trivy misconfiguration scan (KSV-0118).
+  - target:
+      kind: Deployment
+      name: metrics-server
+      namespace: kube-system
+    patch: |-
+      - op: add
+        path: /spec/template/spec/securityContext
+        value:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault

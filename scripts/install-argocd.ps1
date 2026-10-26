@@ -71,14 +71,7 @@ if ($notReady.Count -gt 0) {
     throw "Argo CD applications did not all become Synced and Healthy within $SyncTimeoutSeconds s."
 }
 
-# ---- 4. login details ----
-$ErrorActionPreference = "Continue"
-$b64 = (& kubectl --context $Context -n argocd get secret argocd-initial-admin-secret -o "jsonpath={.data.password}" 2>$null) -join ""
-$ErrorActionPreference = "Stop"
-Write-Host "Argo CD:  http://localhost:31002" -ForegroundColor Green
-if ($b64) {
-    $password = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
-    Write-Host "Login:    admin / $password" -ForegroundColor Yellow
-    Write-Host "(The password is generated for this cluster and lives only in a Kubernetes Secret.)"
-}
+# ---- 4. how to log in ----
+Write-Host "Argo CD:  http://localhost:31002   user: admin" -ForegroundColor Green
+Write-Host "Password: .\scripts\show-credentials.ps1   (copies it to the clipboard; it is generated per cluster and lives only in a Kubernetes Secret)"
 Write-Host "`nFrom now on a git push is the deployment. Do not use deploy-kind.ps1 on this cluster (it refuses unless forced)." -ForegroundColor Green

@@ -25,8 +25,7 @@ if (-not $secretExists) {
     $password = ([Convert]::ToBase64String($bytes)) -replace '[+/=]', 'x'
     Invoke-Native kubectl @('--context', $Context, '-n', 'monitoring', 'create', 'secret', 'generic', 'grafana-admin',
         '--from-literal=admin-user=admin', "--from-literal=admin-password=$password")
-    Write-Host "`nGrafana login: admin / $password" -ForegroundColor Yellow
-    Write-Host "(Show it again any time with .\scripts\grafana-password.ps1)" -ForegroundColor Yellow
+    Write-Host "`nGrafana login: admin   (password: .\scripts\show-credentials.ps1 -Service grafana, copied to the clipboard and not printed)" -ForegroundColor Yellow
 }
 
 Invoke-Native kubectl @('--context', $Context, 'apply', '-k', $dir)

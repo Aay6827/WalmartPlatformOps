@@ -24,6 +24,10 @@ spec:
       selfHeal: true    # undo changes made by hand with kubectl
     syncOptions:
       - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: latest
     retry:
       limit: 5
       backoff:
