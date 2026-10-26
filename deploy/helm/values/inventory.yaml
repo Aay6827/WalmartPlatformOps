@@ -4,7 +4,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/aay6827/walmartplatformops-inventory
-  tag: "a3d1ee8"
+  tag: "765e283"
 
 service:
   type: ClusterIP
