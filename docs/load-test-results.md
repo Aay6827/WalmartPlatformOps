@@ -58,25 +58,25 @@ k6 ended at t=252 s.
 ```text
 
 
-  â–ˆ THRESHOLDS 
+  THRESHOLDS 
 
     dropped_iterations
-    âœ“ 'count<1' count=0
+    PASS 'count<1' count=0
 
     http_req_duration
-    âœ“ 'p(95)<500' p(95)=7.26ms
+    PASS 'p(95)<500' p(95)=7.26ms
 
     http_req_failed
-    âœ“ 'rate<0.005' rate=0.00%
+    PASS 'rate<0.005' rate=0.00%
 
 
-  â–ˆ TOTAL RESULTS 
+  TOTAL RESULTS 
 
     checks_total.......: 20549   85.623326/s
     checks_succeeded...: 100.00% 20549 out of 20549
     checks_failed......: 0.00%   0 out of 20549
 
-    âœ“ order confirmed
+    order confirmed
 
     HTTP
     http_req_duration..............: avg=5.17ms med=4.76ms p(90)=6.45ms p(95)=7.26ms p(99)=10.49ms max=93.22ms

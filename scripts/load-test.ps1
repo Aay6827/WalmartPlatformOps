@@ -108,9 +108,9 @@ while ($sw.Elapsed.TotalSeconds -lt $limit) {
 
 # ---- analysis ----
 $summary = ""
-if (Test-Path $stdoutFile) { $summary = (Get-Content $stdoutFile -Raw) }
+if (Test-Path $stdoutFile) { $summary = (Get-Content $stdoutFile -Raw -Encoding UTF8) }
 $errText = ""
-if (Test-Path $stderrFile) { $errText = (Get-Content $stderrFile -Raw) }
+if (Test-Path $stderrFile) { $errText = (Get-Content $stderrFile -Raw -Encoding UTF8) }
 if ($null -eq $summary) { $summary = "" }
 if ($null -eq $errText) { $errText = "" }
 
