@@ -18,6 +18,14 @@ Everything runs on a local [kind](https://kind.sigs.k8s.io/) cluster. Every numb
 
 Each GitOps timing is a single run, not an average. The load test shares one machine with the cluster, Prometheus, Grafana and k6, so absolute latencies are indicative only. Checkout is a light in-memory service, which is why latency stays so low; the autoscaler reacts because the CPU request is deliberately small (100m).
 
+## Screenshots
+
+![Checkout scaling dashboard during the load test](docs/img/grafana-scaling.png)
+
+![Argo CD application tree](docs/img/argocd-tree.png)
+
+![Firing alerts during the inventory outage drill](docs/img/alert-firing.png)
+
 ## Architecture
 
 ```text
