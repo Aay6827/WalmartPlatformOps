@@ -16,7 +16,7 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -30,7 +30,7 @@ jobs:
       matrix:
         service: [inventory, checkout]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -54,7 +54,7 @@ jobs:
     env:
       TRIVY_IMAGE: aquasec/trivy:0.58.1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Compute image name (GHCR requires lowercase)
         run: |
@@ -89,7 +89,7 @@ jobs:
   chart:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install kubeconform
         run: |
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
@@ -113,7 +113,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Ensure kind is installed
         run: |
@@ -163,7 +163,7 @@ jobs:
   monitoring:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: promtool check and unit-test the SLO rules (same Prometheus version as the cluster)
         run: |
           docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/w:ro" prom/prometheus:v3.5.0 check rules /w/slo.rules.yml
@@ -179,7 +179,7 @@ jobs:
   load-test-script:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: grafana/setup-k6-action@v1
       - name: k6 inspect (the script parses and its options are valid)
         run: k6 inspect load-tests/checkout.js
@@ -192,7 +192,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Point the Helm values at the images built for this commit
         run: |
           TAG="${GITHUB_SHA::7}"
@@ -213,7 +213,7 @@ jobs:
   config-scan:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Render the manifests this repo owns
         run: |
           mkdir -p scan
@@ -231,7 +231,7 @@ jobs:
   secret-scan:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: gitleaks over the whole git history
