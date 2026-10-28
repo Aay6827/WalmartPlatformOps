@@ -114,6 +114,22 @@ if (Test-Path $stderrFile) { $errText = (Get-Content $stderrFile -Raw -Encoding 
 if ($null -eq $summary) { $summary = "" }
 if ($null -eq $errText) { $errText = "" }
 
+# k6 prints check marks and bars as UTF-8; Windows PowerShell 5.1 re-encodes them on the way to the file. Keep the report plain ASCII.
+function Repair-Mojibake([string]$s) {
+    if (-not $s) { return $s }
+    $pairs = @(
+        @('âœ“', 'pass'),
+        @('âœ—', 'fail'),
+        @('â–ˆ', ''),
+        @('â†³', '>'),
+        @('â€”', '-')
+    )
+    foreach ($p in $pairs) { $s = [regex]::Replace($s, $p[0], $p[1]) }
+    return [regex]::Replace($s, '[^\x00-\x7F]', '')
+}
+$summary = Repair-Mojibake $summary
+$errText = Repair-Mojibake $errText
+
 $verdict = if ($k6Exit -eq 0) { "PASS - every threshold held" } elseif ($k6Exit -eq 99) { "FAIL - at least one threshold was crossed" } else { "ERROR - k6 exited with code $k6Exit" }
 $min = if ($samples.Count -gt 0) { $samples[0].Min } else { 2 }
 $peak = if ($samples.Count -gt 0) { ($samples | Measure-Object -Property Current -Maximum).Maximum } else { 0 }

@@ -10,6 +10,7 @@ Everything runs on a local [kind](https://kind.sigs.k8s.io/) cluster. Every numb
 |---|---|---|
 | Does checkout hold its SLOs from 10 to 120 req/s? | **Yes.** 20,550 requests, 0 failed, p95 7.26 ms (SLO: 500 ms), 0 dropped iterations. | [load-test-results.md](docs/load-test-results.md) |
 | Does the autoscaler add capacity in time? | 2 pods to 5 pods (limit 6). First scale-up decision 111 s into the run, 5 pods at 152 s, back to 2 pods at 384 s (k6 ended at 252 s). | [load-test-results.md](docs/load-test-results.md) |
+| What happens past the autoscaler's limit? | At a 300 req/s target the autoscaler reached its 6-pod limit at t=112 s and the test **failed**: k6 completed 30,935 requests (about 129/s averaged over the run) and dropped 19,314 more, p95 was 5.1 s (SLO: 500 ms), and 27 of 30,936 requests (0.08%) failed with a connection EOF. | [load-test-results-300rps.md](docs/load-test-results-300rps.md) |
 | Does Argo CD undo a manual `kubectl scale`? | Yes, in 0.8 s. | [gitops-drill-results.md](docs/gitops-drill-results.md) |
 | How fast does a git change reach a running pod? | Config in the Deployment after 25.6 s, rollout finished 34.5 s after the push. | [gitops-drill-results.md](docs/gitops-drill-results.md) |
 | How fast does `git revert` roll it back? | Config reverted after 53.1 s, rollout finished 61.9 s after the push. | [gitops-drill-results.md](docs/gitops-drill-results.md) |
@@ -104,7 +105,7 @@ CI jobs: `lint`, `test`, `image`, `chart`, `monitoring`, `load-test-script`, `co
 - State is in memory, so a pod restart loses orders and stock. A shared store is the real fix.
 - Burn-rate windows are scaled down for the drill; production windows are 5m+1h and 30m+6h.
 - Argo CD runs over plain HTTP with its generated admin account.
-- The load test hit 5 of 6 allowed pods, so I have not shown behaviour at the autoscaler ceiling.
+- The load test found a limit I did not explain. At a 300 req/s target checkout failed its SLOs even with all 6 pods running, yet those pods used only about 200% of their 100m CPU request (roughly 0.2 CPU each, against a 0.5 CPU limit), so checkout CPU alone does not explain it. Candidates, unproven: the single inventory replica, or k6, kind and Docker networking all sharing one machine. I did not find the bottleneck.
 
 ## What I would do next
 

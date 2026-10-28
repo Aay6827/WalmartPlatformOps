@@ -40,3 +40,22 @@ Inventory does **not** autoscale: it keeps stock in memory, so a second replica 
 ## Limits of this setup
 
 Everything (kind, services, Prometheus, Grafana, k6) shares one laptop, so absolute throughput figures are not production numbers. What carries over is the method: SLO-derived thresholds, an open-model generator, and a recorded autoscaler timeline.
+
+## Finding the limit (300 req/s target)
+
+Same script and thresholds, `.\scripts\load-test.ps1 -PeakRps 300 -ReportPath docs/load-test-results-300rps.md`. Result: **FAIL**. Full numbers are in [load-test-results-300rps.md](load-test-results-300rps.md).
+
+| | 120 req/s target | 300 req/s target |
+|---|---|---|
+| Result | PASS | FAIL |
+| Requests completed | 20,550 | 30,936 |
+| Dropped iterations | 0 | 19,314 (k6 reached its 500 VU cap) |
+| p95 latency (SLO 500 ms) | 7.26 ms | 5.1 s |
+| Failed requests | 0.00% | 0.08% (27, connection EOF) |
+| Pods | 2 to 5 | reached the limit of 6 at t=112 s |
+
+What the data supports: the autoscaler did its job and ran out of pods. Under load the 6 checkout pods sat at about 200% of their CPU request.
+
+What it does not support: a cause. 200% of a 100m request is about 0.2 CPU per pod, well under the 0.5 CPU limit, so the checkout pods were not CPU-throttled. The unproven candidates are the single inventory replica (every checkout calls it) and the one machine running k6, kind, Docker networking and the monitoring stack together.
+
+To find out, re-run at about 200 req/s and, in a second window, watch `kubectl top pods -n platform` (is inventory the busy pod?) and the inventory call duration in Grafana.
