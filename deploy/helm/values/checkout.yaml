@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: ghcr.io/aay6827/walmartplatformops-checkout
-  tag: "46b2792"
+  tag: "f94884b"
 
 service:
   type: NodePort
