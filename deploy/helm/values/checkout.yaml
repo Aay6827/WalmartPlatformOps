@@ -25,7 +25,7 @@ resources:
 
 autoscaling:
   enabled: true
-  minReplicas: 3
+  minReplicas: 2
   maxReplicas: 6
   targetCPUUtilizationPercentage: 70
   scaleDownStabilizationSeconds: 60   # chart default is 300; shortened so a local load test shows scale-down in minutes
