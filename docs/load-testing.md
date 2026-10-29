@@ -86,4 +86,8 @@ Likely mechanism for the drops, not proven: the script preallocated 50 virtual u
 
 Change made: `preAllocatedVUs` is now 200. The thresholds are unchanged. The next clean run will show whether the drops disappear; its result will be added here either way. A first attempt with 200 preallocated users ([report](load-test-results-2026-10-29-prealloc200-rollout.md)) was disturbed by a rollout during the run and failed, so it does not answer the question.
 
+First clean run with 200 preallocated users ([report](load-test-results-2026-10-29-prealloc200.md)), no redeployment during the run: PASS. 0 failed requests, 0 dropped iterations, p95 15.7 ms, p99 38.5 ms, max 167 ms, peak 6 pods.
+
+What this does not show: that preallocating more users fixed anything. The worst latency in this run was only 167 ms, so the 0.5-1.4 s spikes that went with the dropped iterations on earlier Oct 29 runs did not occur, and a run without spikes passes with 50 users or with 200. Settling it would take more runs under conditions that produce spikes, and I could not make them happen on demand, so the explanation stays unproven.
+
 Rule from this: after any push, wait for CI's promote commit and Argo CD to finish before running a load test or a drill. `load-test.ps1` now compares the pod templates before and after the run and says so in the verdict if either service was redeployed. It also waits (up to 7 minutes) until CI's promote commit is deployed before it starts; `-SkipSettleCheck` turns that off.
