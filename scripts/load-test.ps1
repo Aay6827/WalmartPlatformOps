@@ -115,16 +115,17 @@ if ($null -eq $summary) { $summary = "" }
 if ($null -eq $errText) { $errText = "" }
 
 # k6 prints check marks and bars as UTF-8; Windows PowerShell 5.1 re-encodes them on the way to the file. Keep the report plain ASCII.
+# CHARCODES: the patterns are built from character codes so this script stays pure ASCII.
 function Repair-Mojibake([string]$s) {
     if (-not $s) { return $s }
     $pairs = @(
-        @('âœ“', 'pass'),
-        @('âœ—', 'fail'),
-        @('â–ˆ', ''),
-        @('â†³', '>'),
-        @('â€”', '-')
+        @((-join ([char[]](0xE2, 0x153, 0x201C))), 'pass'),
+        @((-join ([char[]](0xE2, 0x153, 0x2014))), 'fail'),
+        @((-join ([char[]](0xE2, 0x2013, 0x2C6))), ''),
+        @((-join ([char[]](0xE2, 0x2020, 0xB3))), '>'),
+        @((-join ([char[]](0xE2, 0x20AC, 0x201D))), '-')
     )
-    foreach ($p in $pairs) { $s = [regex]::Replace($s, $p[0], $p[1]) }
+    foreach ($p in $pairs) { $s = $s.Replace($p[0], $p[1]) }
     return [regex]::Replace($s, '[^\x00-\x7F]', '')
 }
 $summary = Repair-Mojibake $summary
