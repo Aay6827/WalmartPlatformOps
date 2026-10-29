@@ -60,20 +60,30 @@ What it does not support: a cause. 200% of a 100m request is about 0.2 CPU per p
 
 To find out, re-run at about 200 req/s and, in a second window, watch `kubectl top pods -n platform` (is inventory the busy pod?) and the inventory call duration in Grafana.
 
-## Run-to-run variance: the same test twice
+## Run-to-run variance: four runs of the same 120 req/s test
 
-| | Oct 26 | Oct 29 rerun |
-|---|---|---|
-| Result | PASS | FAIL (only `dropped_iterations`) |
-| Failed requests (SLO < 0.5%) | 0.00% | 0.00% (2 of 20,531, connection EOF) |
-| p95 / p99 / max | 7.26 ms / 10.5 ms / 93 ms | 40.4 ms / 168 ms / 860 ms |
-| Dropped iterations (limit 0) | 0 | 19 |
-| Peak pods | 5 | 6 |
+| | Oct 26 | Oct 29 #1 | Oct 29 #2 | Oct 29 #3 |
+|---|---|---|---|---|
+| Result | PASS | FAIL | PASS | FAIL |
+| Redeployed during the run | no | yes (about t=157 s) | yes (about t=190 s, estimated) | no |
+| Failed requests (SLO < 0.5%) | 0.00% | 0.00% (2 of 20,531) | 0.00% (0 of 20,550) | 0.00% (0 of 20,505) |
+| p95 (SLO < 500 ms) | 7.26 ms | 40.4 ms | 45.6 ms | 44.7 ms |
+| p99 / max | 10.5 ms / 93 ms | 168 ms / 860 ms | 216 ms / 485 ms | 649 ms / 1.41 s |
+| Dropped iterations (limit 0) | 0 | 19 | 0 | 45 |
+| Peak pods | 5 | 6 | 6 | 6 |
 
-Reports: [Oct 26](load-test-results.md), [Oct 29](load-test-results-rerun-2026-10-29.md).
+Reports: [Oct 26](load-test-results.md), [#1](load-test-results-rerun-2026-10-29.md), [#2](load-test-results-2026-10-29-rerun2.md), [#3](load-test-results-2026-10-29-clean.md).
 
-What the evidence shows: roughly 157 s into the rerun, the autoscaler timeline shows CPU falling from 202% to 3% for about 20 s (traffic stalled), and k6 logged its two connection EOFs at that time. `kubectl get events` shows both checkout pods replaced and the inventory ReplicaSet scaled down at the same moment, running a new image tag. The cause is the CI promote step: a push made shortly before the test produced a new image, CI committed the new tag, and Argo CD rolled it out in the middle of the run.
+What the data supports:
+- Both real SLOs (errors and p95) held in all four runs, with a wide margin.
+- The only threshold that ever tripped is `dropped_iterations`, the check that k6 kept up. It measures the load generator and the laptop it shares with the cluster, not checkout.
+- Run #3 had no redeployment and still failed, so rollouts do not explain the failures. In run #1 a stall of about 20 s (CPU fell from 202% to 3%) and the only two failed requests coincided with a rollout, but run #2 had a rollout too and was clean.
 
-What it does not show: how a clean 120 req/s run behaves today, because this one was disturbed. Accidentally, it does show that a rolling deploy of both services under about 100 req/s cost 2 failed requests in 20,531.
+What it does not show:
+- Where the 0.5-1.4 s latency spikes on Oct 29 come from. They were absent on Oct 26. Nothing in these runs separates the candidates (the autoscaler adding pods, Docker Desktop networking, other load on the laptop).
+
+Likely mechanism for the drops, not proven: the script preallocated 50 virtual users. At 120 req/s a stall of half a second puts about 60 requests in flight, so k6 has to start more users while iterations are already due, and iterations it cannot start in time are counted as dropped (peak virtual users were 67 in run #1 and 91 in run #3, well below the cap of 500).
+
+Change made: `preAllocatedVUs` is now 200. The thresholds are unchanged. The next clean run will show whether the drops disappear; its result will be added here either way.
 
 Rule from this: after any push, wait for CI's promote commit and Argo CD to finish before running a load test or a drill. `load-test.ps1` now compares the pod templates before and after the run and says so in the verdict if either service was redeployed.

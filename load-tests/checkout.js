@@ -30,7 +30,7 @@ export const options = {
       executor: 'ramping-arrival-rate',
       startRate: BASE_RPS,
       timeUnit: '1s',
-      preAllocatedVUs: 50,
+      preAllocatedVUs: 200,   // 120 req/s x a 0.5 s stall = about 60 in flight; 50 was too few, and k6 drops iterations while it starts more
       maxVUs: 500,
       stages: [
         { target: BASE_RPS, duration: WARM },
