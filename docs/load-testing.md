@@ -84,6 +84,6 @@ What it does not show:
 
 Likely mechanism for the drops, not proven: the script preallocated 50 virtual users. At 120 req/s a stall of half a second puts about 60 requests in flight, so k6 has to start more users while iterations are already due, and iterations it cannot start in time are counted as dropped (peak virtual users were 67 in run #1 and 91 in run #3, well below the cap of 500).
 
-Change made: `preAllocatedVUs` is now 200. The thresholds are unchanged. The next clean run will show whether the drops disappear; its result will be added here either way.
+Change made: `preAllocatedVUs` is now 200. The thresholds are unchanged. The next clean run will show whether the drops disappear; its result will be added here either way. A first attempt with 200 preallocated users ([report](load-test-results-2026-10-29-prealloc200-rollout.md)) was disturbed by a rollout during the run and failed, so it does not answer the question.
 
-Rule from this: after any push, wait for CI's promote commit and Argo CD to finish before running a load test or a drill. `load-test.ps1` now compares the pod templates before and after the run and says so in the verdict if either service was redeployed.
+Rule from this: after any push, wait for CI's promote commit and Argo CD to finish before running a load test or a drill. `load-test.ps1` now compares the pod templates before and after the run and says so in the verdict if either service was redeployed. It also waits (up to 7 minutes) until CI's promote commit is deployed before it starts; `-SkipSettleCheck` turns that off.

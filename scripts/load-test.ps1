@@ -13,6 +13,8 @@ param(
     [int]$ScaleDownWaitSeconds = 240,
     [string]$Context = "kind-walmartplatform",
     [string]$K6Image = "grafana/k6:latest",
+    [switch]$SkipSettleCheck,
+    [int]$SettleTimeoutSeconds = 420,
     [string]$ReportPath = "docs/load-test-results.md"
 )
 $ErrorActionPreference = "Stop"
@@ -54,6 +56,36 @@ try {
     $ready = Invoke-WebRequest "http://localhost:31000/health/ready" -UseBasicParsing
     if ($ready.StatusCode -ne 200) { throw "HTTP $($ready.StatusCode)" }
 } catch { throw "checkout is not answering on http://localhost:31000 ($($_.Exception.Message))." }
+
+# ---- wait until CI's promote commit is deployed: every push to main ends in a rollout, and a rollout mid-test spoils the result ----
+if (-not $SkipSettleCheck) {
+    $settleDeadline = (Get-Date).AddSeconds($SettleTimeoutSeconds)
+    $settled = $false
+    $lastMsg = ""
+    while ((Get-Date) -lt $settleDeadline) {
+        $ErrorActionPreference = "Continue"
+        & git -C $root fetch origin main -q 2>&1 | Out-Null
+        $subject = ((& git -C $root log -1 --format=%s origin/main 2>$null) -join "")
+        $img = ((& kubectl --context $Context -n platform get deploy checkout -o "jsonpath={.spec.template.spec.containers[0].image}" 2>$null) -join "")
+        $ErrorActionPreference = "Stop"
+        if ($subject -match '^chore\(deploy\): promote images to ([0-9a-f]+)') {
+            if ($img.EndsWith(':' + $Matches[1])) { $settled = $true; break }
+            $msg = "Argo CD has not applied the promote commit ($($Matches[1])) yet"
+        } else {
+            $msg = "CI has not pushed its promote commit yet (newest commit on origin/main: $subject)"
+        }
+        if ($msg -ne $lastMsg) { Write-Host "  waiting: $msg" -ForegroundColor Yellow; $lastMsg = $msg }
+        Start-Sleep -Seconds 15
+    }
+    if (-not $settled) { throw "The platform did not settle within $SettleTimeoutSeconds s. Check the Actions tab and 'kubectl -n argocd get applications', or run with -SkipSettleCheck if no CI run is pending." }
+    $ErrorActionPreference = "Continue"
+    foreach ($d in @('checkout', 'inventory')) {
+        & kubectl --context $Context -n platform rollout status "deploy/$d" --timeout=180s 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = "Stop"; throw "deploy/$d is still rolling out after the settle check." }
+    }
+    $ErrorActionPreference = "Stop"
+    Write-Host "Platform settled on the newest commit; starting." -ForegroundColor Green
+}
 
 # ---- remember what is deployed: a rollout in the middle of a test spoils the result ----
 function Get-PodTemplate([string]$name) {
