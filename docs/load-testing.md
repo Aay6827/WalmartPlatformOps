@@ -59,3 +59,21 @@ What the data supports: the autoscaler did its job and ran out of pods. Under lo
 What it does not support: a cause. 200% of a 100m request is about 0.2 CPU per pod, well under the 0.5 CPU limit, so the checkout pods were not CPU-throttled. The unproven candidates are the single inventory replica (every checkout calls it) and the one machine running k6, kind, Docker networking and the monitoring stack together.
 
 To find out, re-run at about 200 req/s and, in a second window, watch `kubectl top pods -n platform` (is inventory the busy pod?) and the inventory call duration in Grafana.
+
+## Run-to-run variance: the same test twice
+
+| | Oct 26 | Oct 29 rerun |
+|---|---|---|
+| Result | PASS | FAIL (only `dropped_iterations`) |
+| Failed requests (SLO < 0.5%) | 0.00% | 0.00% (2 of 20,531, connection EOF) |
+| p95 / p99 / max | 7.26 ms / 10.5 ms / 93 ms | 40.4 ms / 168 ms / 860 ms |
+| Dropped iterations (limit 0) | 0 | 19 |
+| Peak pods | 5 | 6 |
+
+Reports: [Oct 26](load-test-results.md), [Oct 29](load-test-results-rerun-2026-10-29.md).
+
+What the evidence shows: roughly 157 s into the rerun, the autoscaler timeline shows CPU falling from 202% to 3% for about 20 s (traffic stalled), and k6 logged its two connection EOFs at that time. `kubectl get events` shows both checkout pods replaced and the inventory ReplicaSet scaled down at the same moment, running a new image tag. The cause is the CI promote step: a push made shortly before the test produced a new image, CI committed the new tag, and Argo CD rolled it out in the middle of the run.
+
+What it does not show: how a clean 120 req/s run behaves today, because this one was disturbed. Accidentally, it does show that a rolling deploy of both services under about 100 req/s cost 2 failed requests in 20,531.
+
+Rule from this: after any push, wait for CI's promote commit and Argo CD to finish before running a load test or a drill. `load-test.ps1` now compares the pod templates before and after the run and says so in the verdict if either service was redeployed.

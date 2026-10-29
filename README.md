@@ -19,6 +19,8 @@ Everything runs on a local [kind](https://kind.sigs.k8s.io/) cluster. Every numb
 
 Each GitOps timing is a single run, not an average. The load test shares one machine with the cluster, Prometheus, Grafana and k6, so absolute latencies are indicative only. Checkout is a light in-memory service, which is why latency stays so low; the autoscaler reacts because the CPU request is deliberately small (100m).
 
+**Same test, two results.** The 120 req/s test passed on Oct 26 (p95 7.26 ms) and failed on a rerun on Oct 29, but only the strict `dropped_iterations` threshold tripped (19 of about 20,550 iterations); errors (0.00%) and p95 (40.4 ms) stayed inside the SLOs. The cluster's events show Argo CD rolling out new images for both services at the same moment, to within a few seconds, as the run's only two failed requests (connection EOFs) and a traffic stall of roughly 20 s, because CI's promote commit for a push made just before the test landed mid-run. So the rerun measured a rolling deploy under load, with 2 failed requests out of 20,531, and not a clean baseline. Report: [load-test-results-rerun-2026-10-29.md](docs/load-test-results-rerun-2026-10-29.md). The script now warns when a deployment changes during a run.
+
 ## Screenshots
 
 ![Checkout scaling dashboard during the load test](docs/img/grafana-scaling.png)

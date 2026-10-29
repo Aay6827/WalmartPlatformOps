@@ -55,6 +55,15 @@ try {
     if ($ready.StatusCode -ne 200) { throw "HTTP $($ready.StatusCode)" }
 } catch { throw "checkout is not answering on http://localhost:31000 ($($_.Exception.Message))." }
 
+# ---- remember what is deployed: a rollout in the middle of a test spoils the result ----
+function Get-PodTemplate([string]$name) {
+    $ErrorActionPreference = "Continue"
+    $j = (& kubectl --context $Context -n platform get deploy $name -o "jsonpath={.spec.template}" 2>$null) -join ""
+    return $j
+}
+$templateBefore = @{}
+foreach ($d in @('checkout', 'inventory')) { $templateBefore[$d] = Get-PodTemplate $d }
+
 # ---- start k6 ----
 $k6Cmd = Get-Command k6 -ErrorAction SilentlyContinue
 $runner = ""
@@ -106,6 +115,16 @@ while ($sw.Elapsed.TotalSeconds -lt $limit) {
     Start-Sleep -Seconds 10
 }
 
+# ---- did anything get deployed while the test ran? (CI promotes images and Argo CD rolls them out on its own) ----
+$rolledOut = @()
+foreach ($d in @('checkout', 'inventory')) {
+    $after = Get-PodTemplate $d
+    if ($templateBefore[$d] -and $after -and ($templateBefore[$d] -ne $after)) { $rolledOut += $d }
+}
+if ($rolledOut.Count -gt 0) {
+    Write-Host "WARNING: $($rolledOut -join ' and ') was redeployed while the test ran (probably CI's promote commit). Do not trust this run; wait for CI and Argo CD to settle and test again." -ForegroundColor Yellow
+}
+
 # ---- analysis ----
 $summary = ""
 if (Test-Path $stdoutFile) { $summary = (Get-Content $stdoutFile -Raw -Encoding UTF8) }
@@ -132,6 +151,7 @@ $summary = Repair-Mojibake $summary
 $errText = Repair-Mojibake $errText
 
 $verdict = if ($k6Exit -eq 0) { "PASS - every threshold held" } elseif ($k6Exit -eq 99) { "FAIL - at least one threshold was crossed" } else { "ERROR - k6 exited with code $k6Exit" }
+if ($rolledOut.Count -gt 0) { $verdict = "$verdict (NOT A CLEAN RUN: $($rolledOut -join ' and ') was redeployed during the test)" }
 $min = if ($samples.Count -gt 0) { $samples[0].Min } else { 2 }
 $peak = if ($samples.Count -gt 0) { ($samples | Measure-Object -Property Current -Maximum).Maximum } else { 0 }
 $up = $samples | Where-Object { $_.Desired -gt $_.Min } | Select-Object -First 1
